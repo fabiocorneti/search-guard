@@ -213,7 +213,7 @@ public class PrivilegesEvaluator implements ConfigChangeListener {
     }
 
     public boolean evaluate(final User user, final String action, final ActionRequest<?> request) {
-        
+
         if(action.startsWith("cluster:admin/snapshot/restore")) {
             auditLog.logMissingPrivileges(action, request);
             log.warn(action + " is not allowed for a regular user");
@@ -312,8 +312,8 @@ public class PrivilegesEvaluator implements ConfigChangeListener {
            
             if (action.startsWith("cluster:") || action.startsWith("indices:admin/template/delete")
                     || action.startsWith("indices:admin/template/get") || action.startsWith("indices:admin/template/put") 
-                || action.startsWith("indices:data/read/scroll")) {
-                
+                || action.startsWith("indices:data/read/scroll") || action.startsWith("indices:data/read/msearch") ) {
+
                 final Set<String> resolvedActions = resolveActions(sgRoleSettings.getAsArray(".cluster", new String[0]));
 
                 if (log.isDebugEnabled()) {
