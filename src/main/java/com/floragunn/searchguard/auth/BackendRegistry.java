@@ -390,7 +390,7 @@ public class BackendRegistry implements ConfigChangeListener {
         if(log.isTraceEnabled()) {
             log.trace(LogHelper.toString(request));
         }
-        
+
         String sslPrincipal = (String) request.getFromContext(ConfigConstants.SG_SSL_PRINCIPAL);
         if(adminDns.isAdmin(sslPrincipal)) {
             //PKI authenticated REST call
@@ -403,7 +403,7 @@ public class BackendRegistry implements ConfigChangeListener {
             channel.sendResponse(new BytesRestResponse(RestStatus.SERVICE_UNAVAILABLE, "Search Guard not initialized (SG11)"));
             return false;
         }
-        
+
         request.putInContext(ConfigConstants.SG_REMOTE_ADDRESS, xffResolver.resolve(request));
         
         boolean authenticated = false;
@@ -556,7 +556,11 @@ public class BackendRegistry implements ConfigChangeListener {
             channel.sendResponse(new BytesRestResponse(RestStatus.UNAUTHORIZED));
             return false;
         }
-        
+
+        if (!Strings.isNullOrEmpty(sslPrincipal)) {
+            impersonate(request);
+        }
+
         return authenticated;
     }
 
@@ -603,6 +607,47 @@ public class BackendRegistry implements ConfigChangeListener {
         }
 
         tr.putInContext(ConfigConstants.SG_USER, Objects.requireNonNull((User) aU));
+        return true;
+    }
+
+    private boolean impersonate(final RestRequest request) throws ElasticsearchSecurityException {
+
+        final String impersonatedUser = request.header("sg_impersonate_as");
+
+        if(Strings.isNullOrEmpty(impersonatedUser)) {
+            return false; //nothing to do
+        }
+
+        if (!isInitialized()) {
+            throw new ElasticsearchSecurityException("Could not check for impersonation because Search Guard is not yet initialized");
+        }
+
+        final User origPKIuser = request.getFromContext(ConfigConstants.SG_USER);
+        if (origPKIuser == null) {
+            throw new ElasticsearchSecurityException("no original PKI user found");
+        }
+
+        User aU = origPKIuser;
+
+        if (adminDns.isAdmin(impersonatedUser)) {
+            throw new ElasticsearchSecurityException("'"+origPKIuser.getName() + "' is not allowed to impersonate as an adminuser  '" + impersonatedUser+"'");
+        }
+
+        try {
+            if (impersonatedUser != null && !adminDns.isImpersonationAllowed(new LdapName(origPKIuser.getName()), impersonatedUser)) {
+                throw new ElasticsearchSecurityException("'"+origPKIuser.getName() + "' is not allowed to impersonate as '" + impersonatedUser+"'");
+            } else if (impersonatedUser != null) {
+                aU = new User(impersonatedUser);
+                if(log.isDebugEnabled()) {
+                    log.debug("Impersonate from '{}' to '{}'",origPKIuser.getName(), impersonatedUser);
+                }
+            }
+        } catch (final InvalidNameException e1) {
+            throw new ElasticsearchSecurityException("PKI does not have a valid name ('" + origPKIuser.getName() + "'), should never happen",
+                    e1);
+        }
+
+        request.putInContext(ConfigConstants.SG_USER, Objects.requireNonNull((User) aU));
         return true;
     }
 
